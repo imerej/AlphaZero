@@ -18,7 +18,8 @@ Quelques exemples :
 - `ResNet.py` : le reseau (une tete policy et une tete value)
 - `MCTS.py` : la recherche guidee par le reseau
 - `AlphaZero.py` : boucle self play / entrainement
-- `main.py` : entrainement, evaluation contre un joueur aleatoire, partie contre l'ia
+- `minmax.py` : joueur minmax avec heuristique (profondeur 2 par defaut), sert d'adversaire de reference
+- `main.py` : entrainement, evaluation (contre l'aleatoire ou le minmax), partie contre l'ia
 - `test_ndgame.py` : tests
 - `chess.py` : debut des echecs, pas fini
 
@@ -30,6 +31,11 @@ pip install -r requirements.txt
 python main.py train --length 3 --dim 3
 python main.py eval --length 3 --dim 3 --model checkpoints/model_2_60_3_200_4_3x3x3_k3.pt
 python main.py play --length 3 --dim 3 --model checkpoints/model_2_60_3_200_4_3x3x3_k3.pt --first
+
+# alphazero contre le minmax, ou le minmax tout seul
+python main.py eval --length 3 --dim 3 --model ... --adversaire minmax
+python main.py eval --length 4 --dim 3 --joueur minmax --profondeur 2
+python main.py play --length 3 --dim 3 --joueur minmax
 ```
 
 `python main.py -h` pour voir tous les parametres (nb de recherches, iterations, bruit de dirichlet, etc).
@@ -58,6 +64,14 @@ Le comptage s'arrete au premier trou, ce qui permet d'avoir `k < length`.
 Nombre de lignes gagnantes pour `k = length` : `((n+2)^d - n^d) / 2` (8 pour le 3x3, 49 pour le 3x3x3,
 76 pour le qubic). Les tests verifient `check_win` en comparant avec toutes les lignes calculees a la main.
 
+**Minmax.** On regarde toutes les lignes gagnantes de l'hypercube. Une ligne ou un seul joueur a
+des pions peut encore etre gagnee par lui : elle vaut `10^(nb de pions)` pour lui. Une ligne ou les deux
+joueurs ont des pions ne compte plus. L'heuristique est la somme pour moi moins la somme pour l'adversaire
+(meme idee que le score du minmax en C du puissance 4, en comptant les facons potentielles de gagner).
+Avec la profondeur 2 (mon coup puis la reponse de l'adversaire) il voit les victoires immediates et
+bloque celles de l'adversaire, mais pas les fourchettes. Elagage alpha beta, et tirage au hasard entre
+les coups de meme score pour ne pas toujours jouer la meme partie.
+
 ## Resultats
 
 Morpion 3x3, 4 iterations de 100 parties de self play, 60 recherches (environ 2 min sur cpu).
@@ -69,6 +83,11 @@ Evaluation sur 200 parties contre un joueur aleatoire, le modele joue la moitie 
 | reseau entraine | 5 | 187 | 13 | 0 |
 | reseau non entraine | 60 | 183 | 11 | 6 |
 | reseau entraine | 60 | 183 | 17 | 0 |
+
+Contre le minmax de profondeur 2 (100 parties, 60 recherches) le reseau entraine fait 100 nuls,
+le reseau non entraine fait nul quand il commence et perd toutes les parties ou il joue en second.
+
+Le minmax de profondeur 2 gagne toutes ses parties contre l'aleatoire en 3x3x3 et en 4x4x4.
 
 Le 3x3x3 est une victoire facile pour le premier joueur (il prend le centre) mais il faut nettement plus
 d'iterations pour que le reseau le comprenne.

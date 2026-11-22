@@ -4,12 +4,15 @@ from NDGame import *
 from ResNet import *
 from MCTS import *
 from AlphaZero import *
+from minmax import MinMax
 
 
 # exemples :
 #   python main.py train --length 3 --dim 3
 #   python main.py eval --length 3 --dim 3 --model checkpoints/model_2_60_3_200_4_3x3x3_k3.pt
 #   python main.py play --length 3 --dim 3 --model ...
+#   python main.py eval --length 3 --dim 3 --model ... --adversaire minmax
+#   python main.py play --length 3 --dim 3 --joueur minmax
 
 
 def get_parser():
@@ -38,6 +41,10 @@ def get_parser():
     parser.add_argument('--no_augment', action='store_true')
     parser.add_argument('--parties', type=int, default=100, help="nb de parties pour eval")
     parser.add_argument('--first', action='store_true', help="en mode play, l'humain commence")
+    parser.add_argument('--joueur', choices=['alphazero', 'minmax'], default='alphazero',
+                        help="l'ia evaluee (eval) ou contre qui on joue (play)")
+    parser.add_argument('--adversaire', choices=['rand', 'minmax'], default='rand', help="adversaire en mode eval")
+    parser.add_argument('--profondeur', type=int, default=2, help="profondeur du minmax")
     parser.add_argument('--seed', type=int, default=None)
     return parser
 
@@ -75,26 +82,40 @@ def partie(game, joueur1, joueur2):
         player = game.get_opponent(player)
 
 
-def joue_contre_rand(game, mcts, n_parties):
-    # le modele joue la moitie des parties en premier et l'autre moitie en second
-    ia = lambda s, p: coup_mcts(game, mcts, s, p)
-    rand = lambda s, p: coup_aleatoire(game, s)
+def joueur_aleatoire(game):
+    return lambda s, p: coup_aleatoire(game, s)
 
+
+def joueur_mcts(game, mcts):
+    return lambda s, p: coup_mcts(game, mcts, s, p)
+
+
+def joueur_minmax(game, profondeur):
+    m = MinMax(game, profondeur)
+    return lambda s, p: m.get_action(s, p)
+
+
+def match(game, ia, adversaire, n_parties):
+    # ia joue la moitie des parties en premier et l'autre moitie en second
     resultats = {'premier': [], 'second': []}
     for i in trange(n_parties):
         if i % 2 == 0:
-            resultats['premier'].append(partie(game, ia, rand))
+            resultats['premier'].append(partie(game, ia, adversaire))
         else:
-            resultats['second'].append(-partie(game, rand, ia))
-        # dans les deux cas 1 = victoire du modele
+            resultats['second'].append(-partie(game, adversaire, ia))
+        # dans les deux cas 1 = victoire de ia
     return resultats
+
+
+def joue_contre_rand(game, mcts, n_parties):
+    return match(game, joueur_mcts(game, mcts), joueur_aleatoire(game), n_parties)
 
 
 def affiche_resultats(resultats):
     for ordre, r in resultats.items():
         if not r:
             continue
-        print(f"modele {ordre} : {r.count(1)} victoires, {r.count(0)} nuls, {r.count(-1)} defaites sur {len(r)}")
+        print(f"{ordre} : {r.count(1)} victoires, {r.count(0)} nuls, {r.count(-1)} defaites sur {len(r)}")
 
 
 def demande_coup(game, state):
@@ -113,7 +134,7 @@ def demande_coup(game, state):
         return int(np.ravel_multi_index(indices, game.shape))
 
 
-def joue_contre_humain(game, mcts, humain_commence):
+def joue_contre_humain(game, ia, humain_commence):
     state = game.get_initial_state()
     player = 1
     humain = 1 if humain_commence else -1
@@ -125,7 +146,7 @@ def joue_contre_humain(game, mcts, humain_commence):
         if player == humain:
             action = demande_coup(game, state)
         else:
-            action = coup_mcts(game, mcts, state, player)
+            action = ia(state, player)
             print("l'ia joue", game.to_base(action))
         state = game.get_next_state(state, action, player)
         value, is_terminal = game.get_value_and_terminated(state, action)
@@ -185,9 +206,19 @@ if __name__ == '__main__':
         }
         mcts = MCTS(game, args, model)
 
-        if a.mode == 'eval':
-            if a.model is None:
-                print("pas de --model : on evalue un reseau non entraine")
-            affiche_resultats(joue_contre_rand(game, mcts, a.parties))
+        if a.joueur == 'minmax':
+            ia = joueur_minmax(game, a.profondeur)
         else:
-            joue_contre_humain(game, mcts, a.first)
+            if a.model is None:
+                print("pas de --model : reseau non entraine")
+            ia = joueur_mcts(game, mcts)
+
+        if a.mode == 'eval':
+            if a.adversaire == 'minmax':
+                adversaire = joueur_minmax(game, a.profondeur)
+            else:
+                adversaire = joueur_aleatoire(game)
+            print(f"{a.joueur} contre {a.adversaire}")
+            affiche_resultats(match(game, ia, adversaire, a.parties))
+        else:
+            joue_contre_humain(game, ia, a.first)

@@ -5,6 +5,7 @@ import torch
 from NDGame import NDGame
 from ResNet import ResNet
 from MCTS import MCTS
+from minmax import MinMax
 
 
 # lance avec : python -m pytest test_ndgame.py  (ou juste python test_ndgame.py)
@@ -141,6 +142,48 @@ def test_mcts_coup_gagnant():
     # . . .   -> X doit jouer 2
     probs = mcts.search(state)
     assert np.argmax(probs) == 2
+
+
+def test_minmax_lignes():
+    for n, d, k in [(3, 2, 3), (3, 3, 3), (4, 3, 4), (5, 2, 4)]:
+        game = NDGame(n, d, k)
+        assert len(MinMax(game).lignes) == len(lignes_gagnantes(game))
+
+
+def test_minmax_gagne_et_bloque():
+    game = NDGame(3, 2)
+    m = MinMax(game, 2, aleatoire=False)
+    state = game.get_initial_state()
+    for a, p in [(0, 1), (3, -1), (1, 1), (4, -1)]:
+        state = game.get_next_state(state, a, p)
+    # X X .
+    # O O .
+    # . . .
+    assert m.get_action(state, 1) == 2   # X gagne en 2
+    state[0, 0] = 0
+    state = game.get_next_state(state, 6, 1)
+    # . X .
+    # O O .
+    # X . .   -> X doit bloquer en 5
+    assert m.get_action(state, 1) == 5
+    # et O joue 5 pour gagner
+    assert m.get_action(state, -1) == 5
+
+
+def test_minmax_3d():
+    # en 3x3x3 le premier coup doit etre le centre (13 lignes passent par lui)
+    game = NDGame(3, 3)
+    m = MinMax(game, 2, aleatoire=False)
+    assert m.get_action(game.get_initial_state(), 1) == 13
+
+
+def test_heuristique_symetrique():
+    game = NDGame(4, 3)
+    m = MinMax(game)
+    rng = np.random.default_rng(2)
+    for _ in range(20):
+        state = rng.choice([-1, 0, 1], size=game.shape).astype(float)
+        assert m.heuristique(state) == -m.heuristique(-state)
 
 
 if __name__ == '__main__':
