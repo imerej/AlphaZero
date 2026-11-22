@@ -3,7 +3,6 @@ import math
 import torch
 import random
 
-import matplotlib.pyplot as plt
 
 import tqdm
 from tqdm import trange
@@ -64,7 +63,8 @@ class Node:
 
                 child = Node(self.game, self.args, child_state, self, action, prob)
                 self.children.append(child)
-        return child
+        # on ne renvoie plus le dernier enfant : la valeur du reseau
+        # correspond au noeud qu'on vient d'etendre, pas a un de ses fils
         """
         action = np.random.choice(np.where(self.expandable_moves == 1)[0])
         # [0] tranforme le n - uplet renvoyé en un tab auquel rand choice est appliquable
@@ -112,6 +112,15 @@ class MCTS:
         self.game = game
         self.args = args
         self.model = model
+
+    def mask_policy(self, policy, valid_moves):
+        policy = policy * valid_moves #ca met a 0 les coups illegaux
+        total = np.sum(policy)
+        if total > 0:
+            return policy / total # ca remet une proba
+        # si le reseau met tout sur des coups illegaux on joue uniforme
+        # (sinon division par 0 et des nan partout)
+        return valid_moves / np.sum(valid_moves)
         
     @torch.no_grad() 
     # car on ne souhaite pas stocker le parcours effectué sur le 
@@ -127,16 +136,21 @@ class MCTS:
             torch.tensor(self.game.get_encoded_state(state), device = self.model.device).unsqueeze(0)
         )
         policy = torch.softmax(policy, axis = 1).squeeze(0).cpu().numpy()
-        policy = (1 - self.args['dirichlet_epsilon']) \
-            * policy + self.args['dirichlet_epsilon'] \
-            * np.random.dirichlet([self.args['dirichlet_alpha']] * self.game.action_size)
+        valid_moves = self.game.get_valid_moves(state)
+
+        epsilon = self.args.get('dirichlet_epsilon', 0)
+        if epsilon > 0:
+            noise = np.zeros(self.game.action_size)
+            noise[valid_moves == 1] = np.random.dirichlet(
+                [self.args['dirichlet_alpha']] * int(np.sum(valid_moves)))
+            policy = (1 - epsilon) * policy + epsilon * noise
         # P(s,a) = (1-epsilon) (p\a) + epsilon (eta\a)
         #les lignes precedentes servent a introduire du bruit
         #pour avoir + d'aleatoire et + explorer
-        
-        valid_moves = self.game.get_valid_moves(state)
-        policy *= valid_moves 
-        policy /= np.sum(policy)    
+        # le bruit n'est tire que sur les coups legaux, sinon une partie
+        # du bruit part sur des cases deja prises et disparait a la normalisation
+
+        policy = self.mask_policy(policy, valid_moves)
         root.expand(policy)
         
         for search in range(self.args['num_searches']):
@@ -158,13 +172,12 @@ class MCTS:
                 valid_moves = self.game.get_valid_moves(node.state)
                 #pour eviter de jouer la ou on a pas le droit
                 
-                policy *= valid_moves #ca met a 0 les coups illegaux
-                policy /= np.sum(policy) # ca remet une proba
-                
+                policy = self.mask_policy(policy, valid_moves)
+
                 value = value.item()
-                 
+
                 #expansion
-                node = node.expand(policy)
+                node.expand(policy)
                 
                 '''
                 #simulation
