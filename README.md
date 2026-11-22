@@ -89,8 +89,28 @@ le reseau non entraine fait nul quand il commence et perd toutes les parties ou 
 
 Le minmax de profondeur 2 gagne toutes ses parties contre l'aleatoire en 3x3x3 et en 4x4x4.
 
-Le 3x3x3 est une victoire facile pour le premier joueur (il prend le centre) mais il faut nettement plus
-d'iterations pour que le reseau le comprenne.
+Morpion 3x3x3, 8 iterations de 100 parties de self play, 60 recherches, 16 symetries par position
+(environ 15 min sur cpu). Le 3x3x3 est gagne d'avance par le premier joueur (il prend le centre) et
+il n'y a pas de nul possible. La value loss tombe presque a 0 vers l'iteration 4 et les parties de
+self play raccourcissent (environ 6 coups) : le reseau a compris que le premier joueur gagne vite.
+
+Evaluation sur 100 parties, la moitie en premier :
+
+| | recherches | adversaire | en premier | en second |
+|---|---|---|---|---|
+| reseau non entraine | 60 | minmax | 0 / 50 | 0 / 50 |
+| reseau non entraine | 5 | minmax | 0 / 50 | 0 / 50 |
+| reseau entraine | 5 | minmax | 50 / 50 | 0 / 50 |
+| reseau entraine | 60 | minmax | 50 / 50 | 0 / 50 |
+| reseau entraine | 60 | aleatoire | 50 / 50 | 50 / 50 |
+| minmax | | minmax | 50 / 50 | 0 / 50 |
+
+(nombre de victoires). En second toutes les parties sont perdues contre le minmax, mais le minmax perd
+aussi toutes ses parties en second contre lui meme : il trouve la victoire forcee quand il commence.
+Pour comparer vraiment les joueurs il faudrait passer au 4x4x4 (qubic).
+
+Attention avec seulement 2 coeurs : lancer deux entrainements ou evaluations en meme temps les rend
+enormement plus lents (pytorch utilise plusieurs threads par processus).
 
 ## Ce qui a ete corrige
 
